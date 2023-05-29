@@ -22,11 +22,11 @@ root.geometry("250x250")
 def onOpen():
     fileName = filedialog.askopenfilename(filetypes=[('CSV Files', '*.csv')])
     if fileName:
-        datadf = pd.read_csv(fileName)
+        dataDF = pd.read_csv(fileName)
         outcomeColumn = simpledialog.askstring('Input', 'Enter the outcome column:', parent=root)
         if outcomeColumn:
-            features = datadf.drop(outcomeColumn, axis=1)
-            target = datadf[outcomeColumn]
+            features = dataDF.drop(outcomeColumn, axis=1)
+            target = dataDF[outcomeColumn]
             # Delete OpenCSV and Load Classifier Buttons
             openButton.pack_forget()
             loadClassifierButton.pack_forget()
@@ -131,7 +131,7 @@ def onOpen():
                 def visualizeNb():
                     # Get the number of features
                     nFeatures = features.shape[1]
-                    featureNames = datadf.columns
+                    featureNames = dataDF.columns
 
                     # Create a figure with one subplot for each feature
                     fig, axes = plt.subplots(nrows=1, ncols=nFeatures)
@@ -177,25 +177,19 @@ def onOpen():
                             priorElement.set('class', str(clf.classes_[i]))
                             priorElement.set('value', str(prior))
 
-                        # Create an element for the means
-                        meansElement = ET.SubElement(root, 'Means')
+                        # Create an element for the likelihoods
+                        likelihoodsElement = ET.SubElement(root, 'Likelihoods')
                         for i in range(clf.theta_.shape[0]):
-                            meanElement = ET.SubElement(meansElement, 'Mean')
-                            meanElement.set('class', str(clf.classes_[i]))
+                            likelihoodElement = ET.SubElement(likelihoodsElement, 'Likelihood')
+                            likelihoodElement.set('class', str(clf.classes_[i]))
                             for j in range(clf.theta_.shape[1]):
-                                featureElement = ET.SubElement(meanElement, 'Feature')
+                                featureElement = ET.SubElement(likelihoodElement, 'Feature')
                                 featureElement.set('index', str(j))
-                                featureElement.set('value', str(clf.theta_[i][j]))
+                                featureElement.set('value', str(clf.feature_log_prob_[i][j]))
 
-                        # Create an element for the variances
-                        variancesElement = ET.SubElement(root, 'Variances')
-                        for i in range(clf.var_.shape[0]):
-                            varianceElement = ET.SubElement(variancesElement, 'Variance')
-                            varianceElement.set('class', str(clf.classes_[i]))
-                            for j in range(clf.var_.shape[1]):
-                                featureElement = ET.SubElement(varianceElement, 'Feature')
-                                featureElement.set('index', str(j))
-                                featureElement.set('value', str(clf.var_[i][j]))
+                        # Create an element for the evidence
+                        evidenceElement = ET.SubElement(root, 'Evidence')
+                        evidenceElement.set('value', str(clf.class_log_prior_))
 
                         # Write the XML data to a file
                         tree = ET.ElementTree(root)
