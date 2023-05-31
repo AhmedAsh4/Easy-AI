@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox
 from tkinter import simpledialog
 import pandas as pd
 from sklearn.tree import DecisionTreeClassifier, export_graphviz
-from sklearn.naive_bayes import GaussianNB
+from sklearn.naive_bayes import MultinomialNB
 from sklearn.neighbors import KNeighborsClassifier
 from PIL import Image, ImageTk
 import io
@@ -23,6 +23,15 @@ def onOpen():
     fileName = filedialog.askopenfilename(filetypes=[('CSV Files', '*.csv')])
     if fileName:
         dataDF = pd.read_csv(fileName)
+        dataDF=dataDF.dropna()
+        # Ask the user to select columns to drop
+        colsToDrop = simpledialog.askstring('Input', 'Enter the columns to drop (separated by commas):', parent=root)
+        if colsToDrop:
+            # Split the input string into a list of column names
+            colsToDrop = colsToDrop.split(',')
+            # Drop the selected columns from the DataFrame
+            dataDF = dataDF.drop(colsToDrop, axis=1)
+            
         outcomeColumn = simpledialog.askstring('Input', 'Enter the outcome column:', parent=root)
         if outcomeColumn:
             features = dataDF.drop(outcomeColumn, axis=1)
@@ -65,7 +74,8 @@ def onOpen():
 
                 # Visualize the decision tree
                 dot_data = export_graphviz(clf, out_file=None, feature_names=list(features.columns),
-                                           class_names=[str(x) for x in clf.classes_], filled=True)
+                                           class_names=[str(x) for x in clf.classes_], filled=True,
+                                           impurity=False, proportion=False,rounded=True)
                 graph = pydotplus.graph_from_dot_data(dot_data)
                 image_data = graph.create_png()
                 image = Image.open(io.BytesIO(image_data))
@@ -124,7 +134,7 @@ def onOpen():
                 saveClassifierButton.pack()
 
             elif classifier == 'nb':
-                clf = GaussianNB()
+                clf = MultinomialNB()
                 clf.fit(features, target)
                 print('Naive Bayes trained!')
 
@@ -168,21 +178,21 @@ def onOpen():
                 def onSaveRules():
                     if clf:
                         # Create the root element
-                        root = ET.Element('NaiveBayes')
+                        root = ET.Element('Naive Bayes')
 
                         # Create an element for the class priors
                         priorsElement = ET.SubElement(root, 'Priors')
-                        for i, prior in enumerate(clf.class_prior_):
+                        for i, prior in enumerate(clf.class_log_prior_):
                             priorElement = ET.SubElement(priorsElement, 'Prior')
                             priorElement.set('class', str(clf.classes_[i]))
                             priorElement.set('value', str(prior))
 
                         # Create an element for the likelihoods
                         likelihoodsElement = ET.SubElement(root, 'Likelihoods')
-                        for i in range(clf.theta_.shape[0]):
+                        for i in range(clf.feature_log_prob_.shape[0]):
                             likelihoodElement = ET.SubElement(likelihoodsElement, 'Likelihood')
                             likelihoodElement.set('class', str(clf.classes_[i]))
-                            for j in range(clf.theta_.shape[1]):
+                            for j in range(clf.feature_log_prob_.shape[1]):
                                 featureElement = ET.SubElement(likelihoodElement, 'Feature')
                                 featureElement.set('index', str(j))
                                 featureElement.set('value', str(clf.feature_log_prob_[i][j]))
@@ -193,8 +203,9 @@ def onOpen():
 
                         # Write the XML data to a file
                         tree = ET.ElementTree(root)
-                        tree.write(f'{fileName.split("/")[-1]}-ParametersNB.xml')
+                        tree.write(f'{fileName.split("/")[-1]}-ParametersMNB.xml')
                         print(f'Naive Bayes parameters saved to {fileName.split("/")[-1]}-ParametersNB.xml')
+
 
                 # Create the "Save Rules" button
                 saveRulesButton = tk.Button(root, text='Save Parameters', command=onSaveRules)
