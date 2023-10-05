@@ -1,15 +1,8 @@
 # V2 Added
 Version 2 now allows for Both Regression and Classification. <br>
 Where both involve selecting and .CSV file, preprocessing it then passing it by a Voting ensemble. <br>
-Models used for Regression:
-- XGBoost Regressor
-- Lasso Regressor
-- KNeighbors Regressor
-<br>
-Models used for Classification: <br>
-- XGBoost Classifier
-- MultinomialNB
-- KNeighbors Classifier
+Models used for Regression:XGBoost Regressor, Lasso Regressor, KNeighbors Regressor <br>
+Models used for Classification:XGBoost Classifier, MultinomialNB, KNeighbors Classifier <br>
 
 Both options allow for displaying performance graphs (PredictionsVsActual and QQplot for regression , Confusion matrix and ROC curve for classification), as well as predicting new data,saving the classifier as .joblib, and saving metrics in .txt file <br>
 
