@@ -6,7 +6,7 @@ Models used for Regression:
 - Lasso Regressor
 - KNeighbors Regressor
 <br>
-Models used for Classification:
+Models used for Classification: <br>
 - XGBoost Classifier
 - MultinomialNB
 - KNeighbors Classifier
