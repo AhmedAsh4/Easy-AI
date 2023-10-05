@@ -1,360 +1,425 @@
+import json
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import simpledialog
-import pandas as pd
-from sklearn.tree import DecisionTreeClassifier, export_graphviz
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.neighbors import KNeighborsClassifier
-from PIL import Image, ImageTk
-import io
-import pydotplus
-import xml.etree.ElementTree as ET
+
 import joblib
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import VotingClassifier, VotingRegressor
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import Lasso
+from sklearn.metrics import confusion_matrix, mean_squared_error, mean_absolute_error, roc_auc_score, \
+    roc_curve, ConfusionMatrixDisplay, precision_score, recall_score, f1_score
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import MinMaxScaler, LabelEncoder, OneHotEncoder
+from statsmodels.api import qqplot
+from xgboost import XGBClassifier, XGBRegressor
 
 # Create the main window
 root = tk.Tk()
 root.title("Expert System")
 root.geometry("250x250")
 
-
+Encode = LabelEncoder()
 # Function to handle the "Open" button
 def onOpen():
-    fileName = filedialog.askopenfilename(filetypes=[('CSV Files', '*.csv')])
-    if fileName:
-        dataDF = pd.read_csv(fileName)
-        dataDF=dataDF.dropna()
-        # Ask the user to select columns to drop
-        colsToDrop = simpledialog.askstring('Input', 'Enter the columns to drop (separated by commas):', parent=root)
-        if colsToDrop:
-            # Split the input string into a list of column names
-            colsToDrop = colsToDrop.split(',')
-            # Drop the selected columns from the DataFrame
-            dataDF = dataDF.drop(colsToDrop, axis=1)
-            
-        outcomeColumn = simpledialog.askstring('Input', 'Enter the outcome column:', parent=root)
-        if outcomeColumn:
-            features = dataDF.drop(outcomeColumn, axis=1)
-            target = dataDF[outcomeColumn]
-            # Delete OpenCSV and Load Classifier Buttons
-            openButton.pack_forget()
-            loadClassifierButton.pack_forget()
-            # Create a StringVar to hold the value of the selected option
-            classifierVar = tk.StringVar(value='dtc')
+    '''
+    Ask the user to Select a CSV file, Drop unwanted Columns, And select Target
+    :return:
+    feature: Pandas DataFrame, Features to Train on
+    target: Pandas Series, Target to predict
+    '''
+    try:
+        global fileName
+        fileName = filedialog.askopenfilename(filetypes=[('CSV Files', '*.csv')])
+        if fileName:
+            dataDF = pd.read_csv(fileName)
+            # Ask the user to select columns to drop
+            colsToDrop = simpledialog.askstring('Input', 'Enter the columns to drop (separated by commas):', parent=root)
+            if colsToDrop:
+                # Split the input string into a list of column names
+                colsToDrop = colsToDrop.split(',')
+                # Drop the selected columns from the DataFrame
+                dataDF = dataDF.drop(colsToDrop, axis=1)
 
-            # Create a label for the radio button
-            classifierLabel = tk.Label(root, text='Choose a classifier:')
-            classifierLabel.pack()
+            outcomeColumn = simpledialog.askstring('Input', 'Enter the outcome column:', parent=root)
+            if outcomeColumn:
+                features = dataDF.drop(outcomeColumn, axis=1)
+                target = dataDF[outcomeColumn]
 
-            # Create a radio button for each option
-            dtcRadio = tk.Radiobutton(root, text='Decision Tree', variable=classifierVar, value='dtc')
-            dtcRadio.pack()
-            nbRadio = tk.Radiobutton(root, text='Naive Bayes', variable=classifierVar, value='nb')
-            nbRadio.pack()
-            knnRadio = tk.Radiobutton(root, text='KNN', variable=classifierVar, value='knn')
-            knnRadio.pack()
-
-            # Wait for the user to choose an option
-            root.wait_variable(classifierVar)
-
-            # Remove the radio button and label from the GUI
-            classifierLabel.pack_forget()
-            dtcRadio.pack_forget()
-            nbRadio.pack_forget()
-            knnRadio.pack_forget()
-
-            # Get the value of the selected option
-            classifier = classifierVar.get()
-
-            # Train the selected classifier
-            if classifier == 'dtc':
-                clf = DecisionTreeClassifier()
-                clf.fit(features, target)
-                print('Decision Tree trained!')
-
-                # Visualize the decision tree
-                dot_data = export_graphviz(clf, out_file=None, feature_names=list(features.columns),
-                                           class_names=[str(x) for x in clf.classes_], filled=True,
-                                           impurity=False, proportion=False,rounded=True)
-                graph = pydotplus.graph_from_dot_data(dot_data)
-                image_data = graph.create_png()
-                image = Image.open(io.BytesIO(image_data))
-                photo = ImageTk.PhotoImage(image)
-                image_label.image = photo
-                print("Done")
-
-                # function to handle the "Display Tree" button
-                def DisplayTree():
-                    if image_label.image:
-                        image = Image.open(io.BytesIO(image_data))
-                        image.show()
-
-                displayTreeButton = tk.Button(root, text='Display Tree', command=DisplayTree)
-                displayTreeButton.pack()
-
-                # Function to handle the "Save Rules" button
-                def onSaveRules():
-                    if clf:
-                        rules = export_graphviz(clf, out_file=None, feature_names=list(features.columns),
-                                                class_names=[str(x) for x in clf.classes_], filled=True)
-                        root = ET.Element('rules')
-                        root.text = rules
-                        tree = ET.ElementTree(root)
-                        tree.write(f'{fileName.split("/")[-1]}-rulesDT.xml')
-                        print(f'Rules saved to {fileName.split("/")[-1]}-rulesDT.xml')
-
-                # Create the "Save Rules" button
-                saveRulesButton = tk.Button(root, text='Save Rules', command=onSaveRules)
-                saveRulesButton.pack()
-
-                # Function to handle the "Predict" button
-                def onPredict():
-                    if clf:
-                        inputData = {}
-                        for column in features.columns:
-                            value = simpledialog.askstring('Input', f'Enter value for {column}:', parent=root)
-                            inputData[column] = value
-                        inputDf = pd.DataFrame([inputData])
-                        prediction = clf.predict(inputDf)
-                        tk.messagebox.showinfo('Prediction', f'Prediction: {prediction[0]}')
-
-                # Create the "Predict" button
-                predictButton = tk.Button(root, text='Predict', command=onPredict)
-                predictButton.pack()
-
-                # Function to handle the "Save Classifier" button
-                def onSaveClassifier():
-                    if clf:
-                        dataclf = {'clf': clf, 'feature_names': features}
-                        joblib.dump(dataclf, f'{fileName.split("/")[-1]}-classifierDT.joblib')
-                        print(f'Classifier saved to {fileName.split("/")[-1]}-classifierDT.joblib')
-
-                # Create the "Save Classifier" button
-                saveClassifierButton = tk.Button(root, text='Save Classifier', command=onSaveClassifier)
-                saveClassifierButton.pack()
-
-            elif classifier == 'nb':
-                clf = MultinomialNB()
-                clf.fit(features, target)
-                print('Naive Bayes trained!')
-
-                def visualizeNb():
-                    # Get the number of features
-                    nFeatures = features.shape[1]
-                    featureNames = dataDF.columns
-
-                    # Create a figure with one subplot for each feature
-                    fig, axes = plt.subplots(nrows=1, ncols=nFeatures)
-
-                    # Plot the distribution of each feature for each class
-                    for i in range(nFeatures):
-                        # Get the data for the current feature
-                        data = features.iloc[:, i]
-
-                        # Plot the distribution for each class
-                        for j in range(clf.classes_.shape[0]):
-                            # Get the data for the current class
-                            classData = data[target == clf.classes_[j]]
-
-                            # Plot a histogram of the data
-                            axes[i].hist(classData, alpha=0.5, label=str(clf.classes_[j]))
-
-                        # Set the title and labels
-                        axes[i].set_title(featureNames[i])
-                        axes[i].set_xlabel('Value')
-                        axes[0].set_ylabel('Count')
-
-                    # Add a legend
-                    plt.legend()
-
-                def displayNb():
-                    visualizeNb()
-                    plt.show()
-
-                visualizeNbButton = tk.Button(root, text='Show Distribution Graph', command=displayNb)
-                visualizeNbButton.pack()
-
-                # Function to handle the "Save Rules" button
-                def onSaveRules():
-                    if clf:
-                        # Create the root element
-                        root = ET.Element('Naive Bayes')
-
-                        # Create an element for the class priors
-                        priorsElement = ET.SubElement(root, 'Priors')
-                        for i, prior in enumerate(clf.class_log_prior_):
-                            priorElement = ET.SubElement(priorsElement, 'Prior')
-                            priorElement.set('class', str(clf.classes_[i]))
-                            priorElement.set('value', str(prior))
-
-                        # Create an element for the likelihoods
-                        likelihoodsElement = ET.SubElement(root, 'Likelihoods')
-                        for i in range(clf.feature_log_prob_.shape[0]):
-                            likelihoodElement = ET.SubElement(likelihoodsElement, 'Likelihood')
-                            likelihoodElement.set('class', str(clf.classes_[i]))
-                            for j in range(clf.feature_log_prob_.shape[1]):
-                                featureElement = ET.SubElement(likelihoodElement, 'Feature')
-                                featureElement.set('index', str(j))
-                                featureElement.set('value', str(clf.feature_log_prob_[i][j]))
-
-                        # Create an element for the evidence
-                        evidenceElement = ET.SubElement(root, 'Evidence')
-                        evidenceElement.set('value', str(clf.class_log_prior_))
-
-                        # Write the XML data to a file
-                        tree = ET.ElementTree(root)
-                        tree.write(f'{fileName.split("/")[-1]}-ParametersMNB.xml')
-                        print(f'Naive Bayes parameters saved to {fileName.split("/")[-1]}-ParametersNB.xml')
+        return (features,target)
+    except:
+        print('Something Went Wrong')
 
 
-                # Create the "Save Rules" button
-                saveRulesButton = tk.Button(root, text='Save Parameters', command=onSaveRules)
-                saveRulesButton.pack()
+def PreprocessData(Reg=True):
+    """
+    Preprocess The Data
+    :return:
+    xTrain: Pandas DataFrame, training data
+    xTest: Pandas DataFrame, test data
+    yTrain: Pandas Series, training label
+    yTest: Pandas Series, test label
+    """
+    features, target = onOpen()  # Get features and target
 
-                # Function to handle the "Predict" button
-                def onPredict():
-                    if clf:
-                        inputData = {}
-                        for column in features.columns:
-                            value = simpledialog.askstring('Input', f'Enter value for {column}:', parent=root)
-                            inputData[column] = value
-                        inputDf = pd.DataFrame([inputData])
-                        prediction = clf.predict(inputDf)
-                        tk.messagebox.showinfo('Prediction', f'Prediction: {prediction[0]}')
+    if Reg:
+        # split Data
+        xTrain, xTest, yTrain, yTest = train_test_split(features, target, shuffle=True)
 
-                # Create the "Predict" button
-                predictButton = tk.Button(root, text='Predict', command=onPredict)
-                predictButton.pack()
+    else:
+        #encode and split data
+        target=Encode.fit_transform(target)
+        xTrain, xTest, yTrain, yTest = train_test_split(features, target, shuffle=True,stratify=target)
 
-                # Function to handle the "Save Classifier" button
-                def onSaveClassifier():
-                    if clf:
-                        dataclf = {'clf': clf, 'feature_names': features}
-                        joblib.dump(dataclf, f'{fileName.split("/")[-1]}-classifierNB.joblib')
-                        print(f'Classifier saved to {fileName.split("/")[-1]}-classifierNB.joblib')
+    # split data based on dtype and impute
+    types = set([str(x) for x in xTrain.dtypes])
+    if 'datetime64[ns]' in types:
+        xTrainDate = xTrain.select_dtypes(include='datetime64[ns]').fillna(method='ffill')
+        xTestDate = xTest.select_dtypes(include='datetime64[ns]').fillna(method='ffill')
 
-                # Create the "Save Classifier" button
-                saveClassifierButton = tk.Button(root, text='Save Classifier', command=onSaveClassifier)
-                saveClassifierButton.pack()
+        xTrain.drop(xTrainDate.columns, axis=1,inplace=True)
+        xTrain = pd.concat([xTrain, xTrainDate], axis=1)
+        xTest.drop(xTestDate.columns, axis=1,inplace=True)
+        xTest = pd.concat([xTest, xTestDate], axis=1)
 
+    if 'int64' in types or 'float64' in types:
+        # Select columns where dtype is numerical
+        numCols = xTrain.select_dtypes(include=['int64', 'float64']).columns
 
-            elif classifier == 'knn':
-                clf = KNeighborsClassifier()
-                clf.fit(features, target)
-                print('KNN trained!')
-
-                def visualizeKnn():
-                    # Create a heatmap of the correlation matrix
-                    corr = features.corr()
-                    plt.imshow(corr, cmap='coolwarm')
-                    plt.xticks(range(len(corr.columns)), corr.columns)
-                    plt.yticks(range(len(corr.columns)), corr.columns)
-                    plt.colorbar()
-                    plt.title('Heatmap')
-
-                def displayKNN():
-                    visualizeKnn()
-                    plt.show()
-
-                visualizeKnnButton = tk.Button(root, text='Show Heatmap', command=displayKNN)
-                visualizeKnnButton.pack()
-
-                # Function to handle the "Save Rules" button
-                def onSaveRules():
-                    if clf:
-                        # Create the root element
-                        root = ET.Element('KNN')
-
-                        # Create an element for k
-                        kElement = ET.SubElement(root, 'k')
-                        kElement.text = str(clf.n_neighbors)
-
-                        # Create an element for the distance metric
-                        metricElement = ET.SubElement(root, 'metric')
-                        metricElement.text = clf.metric
-
-                        # Create an element for the training instances
-                        instancesElement = ET.SubElement(root, 'instances')
-                        for i in range(clf._fit_X.shape[0]):
-                            instanceElement = ET.SubElement(instancesElement, 'instance')
-                            instanceElement.set('class', str(clf._y[i]))
-                            for j in range(clf._fit_X.shape[1]):
-                                featureElement = ET.SubElement(instanceElement, 'feature')
-                                featureElement.set('index', str(j))
-                                featureElement.set('value', str(clf._fit_X[i][j]))
-
-                        # Write the XML data to a file
-                        tree = ET.ElementTree(root)
-                        tree.write(f'{fileName.split("/")[-1]}-ParametersKNN.xml')
-                        print(f'KNN parameters saved to {fileName.split("/")[-1]}-ParametersKNN.xml')
-
-                # Create the "Save Rules" button
-                saveRulesButton = tk.Button(root, text='Save Rules', command=onSaveRules)
-                saveRulesButton.pack()
-
-                # Function to handle the "Predict" button
-                def onPredict():
-                    if clf:
-                        inputData = {}
-                        for column in features.columns:
-                            value = simpledialog.askstring('Input', f'Enter value for {column}:', parent=root)
-                            inputData[column] = value
-                        inputDf = pd.DataFrame([inputData])
-                        prediction = clf.predict(inputDf)
-                        tk.messagebox.showinfo('Prediction', f'Prediction: {prediction[0]}')
-
-                # Create the "Predict" button
-                predictButton = tk.Button(root, text='Predict', command=onPredict)
-                predictButton.pack()
-
-                # Function to handle the "Save Classifier" button
-                def onSaveClassifier():
-                    if clf:
-                        dataclf = {'clf': clf, 'feature_names': features}
-                        joblib.dump(dataclf, f'{fileName.split("/")[-1]}-classifierKNN.joblib')
-                        print(f'Classifier saved to {fileName.split("/")[-1]}-classifierKNN.joblib')
-
-                # Create the "Save Classifier" button
-                saveClassifierButton = tk.Button(root, text='Save Classifier', command=onSaveClassifier)
-                saveClassifierButton.pack()
+        numericTransformer = Pipeline(steps=[
+            ('imputer', SimpleImputer(strategy='median')),
+            ('scaler', MinMaxScaler())])
 
 
-def onLoadClassifier():
+    if 'object' in types:
+        # Select column where dtype is Object (string)
+        catCols = xTrain.select_dtypes(include=['object']).columns
+        categoricalTransformer = Pipeline(steps=[
+            ('imputer', SimpleImputer(strategy='most_frequent')),
+            ('onehot', OneHotEncoder(handle_unknown='ignore'))])
+
+    #Build Preprocessor
+    if 'categoricalTransformer' in locals() and 'numericTransformer' in locals():
+        preprocessor = ColumnTransformer(
+            transformers=[('num', numericTransformer, numCols),('cat', categoricalTransformer, catCols)])
+
+    elif 'categoricalTransformer' in locals():
+        preprocessor = ColumnTransformer(
+            transformers=[('cat', categoricalTransformer, catCols)])
+
+    else:
+        preprocessor = ColumnTransformer(
+            transformers=[('num', numericTransformer, numCols)])
+
+    return (xTrain, xTest, yTrain, yTest, preprocessor,features)
+
+
+def BuildRegressor():
+    '''
+    Build and Train Optimal Regression Model
+    '''
+
+    #Get preprocessed Data
+    xTrain, xTest, yTrain, yTest, preprocessor, features = PreprocessData()
+
+    params={
+        'xgb__n_estimators': [100, 500, 1000, 1500],
+        'xgb__learning_rate': [0.01, 0.05, 0.1],
+        'xgb__max_depth': [3, 4, 5, 6],
+        'xgb__colsample_bytree': [0.3, 0.5, 0.7],
+        'xgb__gamma': [0, 0.1, 0.2],
+        'lasso__alpha': [x / 10 for x in range(1, 10, 1)],
+        'lasso__fit_intercept': [True, False],
+        'lasso__precompute': [True, False],
+        'lasso__max_iter': [1000, 1100, 1200, 1300, 1400],
+        'lasso__tol': [0.0001, 0.001, 0.01],
+        'lasso__selection': ['cyclic', 'random'],
+        'knr__n_neighbors': [3, 5, 7, 9, 11],
+        'knr__weights': ['uniform', 'distance'],
+        'knr__algorithm': ['auto', 'ball_tree', 'kd_tree', 'brute'],
+        'knr__leaf_size': [10, 20, 30, 40, 50],
+        'knr__p': [1, 2]
+    }
+
+    #Pipeline
+    regressors=[('xgb',XGBRegressor()),('lasso',Lasso()),('knr',KNeighborsRegressor())]
+    vote=VotingRegressor(estimators=regressors)
+    RandomCV=RandomizedSearchCV(vote, params, cv=5, n_jobs=-1)
+
+    PipeReg=Pipeline([('preprocessor', preprocessor),('model',RandomCV)])
+    PipeReg.fit(xTrain,yTrain)
+
+    #Remove old buttons
+    RegressionButton.pack_forget()
+    ClassificationButton.pack_forget()
+    loadModelButton.pack_forget()
+
+    def PredVAct():
+        #Plot Predictions vs Actual
+        pred=PipeReg.predict(xTest)
+        plt.scatter(yTest, pred, color='red', label='Predicted')
+        plt.xlabel('Actual')
+        plt.ylabel('Predicted')
+        plt.title('Actual vs Predicted')
+        diagonal = np.linspace(min(yTest.min(), pred.min()), max(yTest.max(), pred.max()), 100)
+        plt.plot(diagonal, diagonal, 'k--',label='Perfect Model')
+        plt.text(0.95, 0.01, 'R^2 Score: {:.2f}'.format(PipeReg.score(xTest,yTest)),
+                 horizontalalignment='right', verticalalignment='bottom', transform=plt.gca().transAxes)
+        plt.legend(loc='upper left')
+        plt.show()
+
+    PredVActButton = tk.Button(root, text='Prediction Vs Actual Graph', command=PredVAct)
+    PredVActButton.pack()
+
+    def QQPlot():
+        #Plot QQPlot
+        resid=yTest-(PipeReg.predict(xTest))
+        qqplot(resid,fit=True,line='45')
+        plt.title('QQ Plot')
+        plt.show()
+
+    qqButton = tk.Button(root, text='QQ Plot', command=QQPlot)
+    qqButton.pack()
+
+    def FeatureImp():
+        #Plot Feature importance
+        featureNames=PipeReg.named_steps['preprocessor'].get_feature_names_out()
+        plt.figure(figsize=(12, 6))
+        plt.barh(featureNames, RandomCV.best_estimator_.estimators_[0].feature_importances_)
+        plt.xlabel('Importance')
+        plt.ylabel('Features')
+        plt.title('Feature Importance')
+        plt.show()
+
+    featButton = tk.Button(root, text='Feature Importance Plot', command=FeatureImp)
+    featButton.pack()
+
+    def onPredict():
+        #Predict new data
+        inputData = {}
+        for column in features.columns:
+            value = simpledialog.askstring('Input', f'Enter value for {column}:', parent=root)
+            inputData[column] = value
+        inputData = pd.DataFrame([inputData])
+
+        for n,type in enumerate([str(x) for x in features.dtypes]):
+            try:
+                inputData.iloc[:,n]=inputData.iloc[:,n].astype(type)
+            except:
+                print(f"Failed at col {inputData.iloc[:,n].column}")
+                continue
+
+        prediction = PipeReg.predict(inputData)
+        tk.messagebox.showinfo('Prediction', f'Prediction: {prediction[0]}')
+
+    predictButton = tk.Button(root, text='Predict', command=onPredict)
+    predictButton.pack()
+
+    def onSaveClassifier():
+        #save Classifier
+        dataclf = {'clf': PipeReg, 'feature_names': features,'cat': False}
+        joblib.dump(dataclf, f'{fileName.split("/")[-1]}-Regression.joblib')
+        print(f'Classifier saved to {fileName.split("/")[-1]}-Regression.joblib')
+
+    saveClassifierButton = tk.Button(root, text='Save Classifier', command=onSaveClassifier)
+    saveClassifierButton.pack()
+
+    def onSaveDetails():
+        #Save Metrics about models
+        details = {
+            'R^2': PipeReg.score(xTest, yTest),
+            'MSE':  mean_squared_error(yTest, PipeReg.predict(xTest)),
+            'RMSE': np.sqrt(mean_squared_error(yTest, PipeReg.predict(xTest))),
+            'MAE':  mean_absolute_error(yTest, PipeReg.predict(xTest))
+        }
+        with open(f'{fileName.split("/")[-1]}-Regression.txt', 'w') as file:
+            file.write(json.dumps(details))
+        print(f'Details saved to {fileName.split("/")[-1]}-Regression.txt')
+
+    saveDetailsButton = tk.Button(root, text='Save Details', command=onSaveDetails)
+    saveDetailsButton.pack()
+
+def BuildClassifier():
+    '''
+    Build optimal Classifier
+    '''
+    #Preprocessed Data
+    xTrain, xTest, yTrain, yTest, preprocessor, features=PreprocessData(Reg=False)
+
+    params={
+        'xgb__booster': ["gbtree", "dart"],
+        'xgb__tree_method':["auto", "exact", "approx", "hist"],
+        'xgb__learning_rate': [0.01, 0.05, 0.1],
+        'xgb__max_depth': [3, 4, 5, 6],
+        'xgb__colsample_bytree': [0.3, 0.5, 0.7],
+        'xgb__gamma': [0, 0.1, 0.2],
+        'mnb__alpha': [0.1, 0.5, 1.0, 2.0],
+        'mnb__fit_prior': [True, False],
+        'knn__n_neighbors': [3, 5, 7, 9, 11],
+        'knn__weights': ['uniform', 'distance'],
+        'knn__algorithm': ['auto', 'ball_tree', 'kd_tree', 'brute'],
+        'knn__leaf_size': [10, 20, 30, 40, 50],
+        'knn__p': [1, 2]
+
+    }
+
+    #Pipeline
+    classifiers = [('xgb', XGBClassifier()), ('mnb', MultinomialNB()), ('knn', KNeighborsClassifier())]
+    vote = VotingClassifier(estimators=classifiers,voting='soft')
+    RandomCV = RandomizedSearchCV(vote, params, cv=5, n_jobs=-1)
+
+    PipeClas = Pipeline([('preprocessor', preprocessor), ('model', RandomCV)])
+    PipeClas.fit(xTrain, yTrain)
+    print(PipeClas.score(xTest, yTest))
+
+    RegressionButton.pack_forget()
+    ClassificationButton.pack_forget()
+    loadModelButton.pack_forget()
+
+    def ConfMat():
+        #Plot confusion matrix
+        ax=plt.subplot()
+        preds=PipeClas.predict(xTest)
+        conf=confusion_matrix(yTest,preds)
+        g=ConfusionMatrixDisplay(confusion_matrix=conf, display_labels=Encode.inverse_transform(PipeClas.classes_))
+        g.plot(ax=ax, colorbar=False)
+        plt.title("Confusion Matrix")
+        plt.show()
+
+    ConfMatButton = tk.Button(root, text='Confusion Matrix', command=ConfMat)
+    ConfMatButton.pack()
+
+    if len(set(yTest)) == 2:
+        #Check for binary classification to plot ROC curve
+        def ROC():
+            pred = PipeClas.predict_proba(xTest)[:, 1]
+            fpr, tpr, thresholds = roc_curve(yTest, pred)
+
+            plt.plot([0, 1], [0, 1], 'k--', label='Random')
+            plt.plot(fpr, tpr, label='Model')
+
+            plt.xlabel("False Positive Rate")
+            plt.ylabel("True Positive Rate")
+            plt.title("ROC Curve")
+
+            plt.text(0.95, 0.01, 'ROC AUC: {:.2f}'.format(roc_auc_score(yTest,PipeClas.predict(xTest))),
+                     horizontalalignment='right', verticalalignment='bottom', transform=plt.gca().transAxes)
+
+            plt.legend(loc='upper left')
+            plt.show()
+
+        ROCButton = tk.Button(root, text='ROC Curve', command=ROC)
+        ROCButton.pack()
+
+    def FeatureImp():
+        #Plot feature importance
+        featureNames=PipeClas.named_steps['preprocessor'].get_feature_names_out()
+        plt.figure(figsize=(12, 6))
+        plt.barh(featureNames, RandomCV.best_estimator_.estimators_[0].feature_importances_)
+        plt.xlabel('Importance')
+        plt.ylabel('Features')
+        plt.title('Feature Importance')
+        plt.show()
+
+    featButton = tk.Button(root, text='Feature Importance Plot', command=FeatureImp)
+    featButton.pack()
+
+    def onPredict():
+        #Predict new data
+        inputData = {}
+        for column in features.columns:
+            value = simpledialog.askstring('Input', f'Enter value for {column}:', parent=root)
+            inputData[column] = value
+        inputData = pd.DataFrame([inputData])
+
+        for n,type in enumerate([str(x) for x in features.dtypes]):
+            try:
+                inputData.iloc[:,n]=inputData.iloc[:,n].astype(type)
+            except:
+                print(f"Failed at col {inputData.iloc[:,n].column}")
+                continue
+
+        prediction = PipeClas.predict(inputData)
+        tk.messagebox.showinfo('Prediction', f'Prediction: {Encode.inverse_transform(prediction)}')
+
+    predictButton = tk.Button(root, text='Predict', command=onPredict)
+    predictButton.pack()
+
+    def onSaveClassifier():
+        #Save classifier
+        dataclf = {'clf': PipeClas, 'feature_names': features,'cat': True,'LabelEncoder':Encode}
+        joblib.dump(dataclf, f'{fileName.split("/")[-1]}-Classification.joblib')
+        print(f'Classifier saved to {fileName.split("/")[-1]}-Classification.joblib')
+
+    saveClassifierButton = tk.Button(root, text='Save Classifier', command=onSaveClassifier)
+    saveClassifierButton.pack()
+
+    def onSaveDetails():
+        #Save metrics about model
+        pred=PipeClas.predict(xTest)
+        details = {
+            'Accuracy': PipeClas.score(xTest,yTest),
+            'Percision': precision_score(yTest,pred),
+            'Recall': recall_score(yTest,pred),
+            'F1-Score': f1_score(yTest,pred),
+            'ROC AUC Score': roc_auc_score(yTest,pred)
+        }
+        with open(f'{fileName.split("/")[-1]}-Classification.txt', 'w') as file:
+            file.write(json.dumps(details))
+        print(f'Details saved to {fileName.split("/")[-1]}-Classification.txt')
+
+    saveDetailsButton = tk.Button(root, text='Save Details', command=onSaveDetails)
+    saveDetailsButton.pack()
+
+def loadModel():
+    '''
+    Load Pre-made model to predict
+    '''
     fileName = filedialog.askopenfilename(filetypes=[('Joblib Files', '*.joblib')])
     if fileName:
         data = joblib.load(fileName)
         clf = data['clf']
         featureNames = data['feature_names']
+        cat=data['cat']
         print('Classifier loaded from', fileName)
 
-        loadClassifierButton.pack_forget()
-        openButton.pack_forget()
+        inputData = {}
+        for column in featureNames.columns:
+            value = simpledialog.askstring('Input', f'Enter value for {column}:', parent=root)
+            inputData[column] = value
+        inputData = pd.DataFrame([inputData])
 
-        def onPredict():
-            if clf:
-                inputData = {}
-                for column in featureNames.columns:
-                    value = simpledialog.askstring('Input', f'Enter value for {column}:', parent=root)
-                    inputData[column] = value
-                inputDf = pd.DataFrame([inputData])
-                prediction = clf.predict(inputDf)
-                tk.messagebox.showinfo('Prediction', f'Prediction: {prediction[0]}')
+        for n, type in enumerate([str(x) for x in featureNames.dtypes]):
+            try:
+                inputData.iloc[:, n] = inputData.iloc[:, n].astype(type)
+            except:
+                print(f"Failed at col {inputData.iloc[:, n].column}")
+                continue
+        if cat:
+            encode=data['LabelEncoder']
+            prediction = clf.predict(inputData)
+            tk.messagebox.showinfo('Prediction', f'Prediction: {encode.inverse_transform(prediction)}')
+        else:
+            prediction = clf.predict(inputData)
+            tk.messagebox.showinfo('Prediction', f'Prediction: {prediction[0]}')
 
-        predictButton = tk.Button(root, text='Predict', command=onPredict)
-        predictButton.pack()
+# Create the "Regression" button
+RegressionButton = tk.Button(root, text='Train Regressor', command=BuildRegressor)
+RegressionButton.pack()
 
+ClassificationButton = tk.Button(root, text='Train Classifier', command=BuildClassifier)
+ClassificationButton.pack()
 
-# Create the "Open" button
-openButton = tk.Button(root, text='Open CSV', command=onOpen)
-openButton.pack()
-
-# Create the "Load Classifier" button
-loadClassifierButton = tk.Button(root, text='Load Classifier', command=onLoadClassifier)
-loadClassifierButton.pack()
-
-# Create the image label
-image_label = tk.Label(root)
-image_label.pack()
+# Create the "Load Model" button
+loadModelButton = tk.Button(root, text='Predict From Pre-made Model', command=loadModel)
+loadModelButton.pack()
 
 # Run the main loop
 root.mainloop()
